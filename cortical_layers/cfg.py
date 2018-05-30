@@ -1,0 +1,2 @@
+aal_1000_path = '/home/flavus/PycharmProjects/cortical_layers/cortical_layers/templates/AAL1000.nii'
+surface_template_path = '/home/flavus/PycharmProjects/cortical_layers/cortical_layers/templates/surface_template.nii'
