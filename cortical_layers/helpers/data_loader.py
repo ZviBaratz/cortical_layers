@@ -2,7 +2,7 @@ import glob
 import os
 
 import numpy as np
-from .subject_layers_matrix import SubjectLayersMatrix
+from cortical_layers.helpers.subject_layers_matrix import SubjectLayersMatrix
 
 # data_path = '/media/flavus/data/results/cortical_layers'
 data_path = '/home/flavus/PycharmProjects/cortical_layers/cortical_layers/test/test_data'

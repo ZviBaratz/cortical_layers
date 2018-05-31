@@ -4,8 +4,8 @@ import nibabel as nib
 import numpy as np
 
 from cortical_layers import cfg
-from .data_loader import DataLoader
-from .subject_layers_matrix import SubjectLayersMatrix
+from .helpers.data_loader import DataLoader
+from cortical_layers.helpers.subject_layers_matrix import SubjectLayersMatrix
 
 data = DataLoader().read_data()
 

@@ -1,5 +1,10 @@
 # PyCharm stuff
 .idea/
+app/__pycache__/
 
 # Virtual env
 venv/
+
+# Data
+data/
+**.npy
