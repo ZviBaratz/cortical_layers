@@ -27,6 +27,12 @@ class AllClassAALHandler:
     def get_horizontal_slice(self, slice: int, cortical_class: int):
         return np.rot90(self.image[:, :, slice, cortical_class], 3)
 
+    def get_slice(self, plane: str, slice: int, cortical_class: int):
+        return self.get_slicer_function(plane)(slice, cortical_class)
+
+    def get_slicer_function(self, plane: str):
+        return getattr(self, f'get_{plane}_slice')
+
     def get_all_planes_by_coords(self, i_sagittal_slice: int, i_coronal_slice: int,
                                  i_horizontal_slice: int, cortical_class: int):
         return [self.get_sagittal_slice(i_sagittal_slice, cortical_class),
@@ -55,3 +61,7 @@ class AllClassAALHandler:
 
     def get_formatted_slice_info_template(self, slice: np.ndarray):
         return self.info_template.format(*self.get_formatted_slice_info(slice))
+
+    @property
+    def n_classes(self):
+        return self.image.shape[-1]
