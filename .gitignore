@@ -1,6 +1,7 @@
 # PyCharm stuff
 .idea/
 app/__pycache__/
+cortical_layers/__pycache__/
 
 # Virtual env
 venv/

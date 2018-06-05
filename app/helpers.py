@@ -18,31 +18,31 @@ class AllClassAALHandler:
     def __init__(self, image: np.ndarray):
         self.image = image
 
-    def get_sagittal_slice(self, slice: int, cortical_class: int):
-        return np.fliplr(np.rot90(self.image[slice, :, :, cortical_class], 3))
+    def get_sagittal_slice(self, slice: int, class_idx: int):
+        return np.fliplr(np.rot90(self.image[slice, :, :, class_idx], 3))
 
-    def get_coronal_slice(self, slice: int, cortical_class: int):
-        return np.rot90(self.image[:, slice, :, cortical_class], 3)
+    def get_coronal_slice(self, slice: int, class_idx: int):
+        return np.rot90(self.image[:, slice, :, class_idx], 3)
 
-    def get_horizontal_slice(self, slice: int, cortical_class: int):
-        return np.rot90(self.image[:, :, slice, cortical_class], 3)
+    def get_horizontal_slice(self, slice: int, class_idx: int):
+        return np.rot90(self.image[:, :, slice, class_idx], 3)
 
-    def get_slice(self, plane: str, slice: int, cortical_class: int):
-        return self.get_slicer_function(plane)(slice, cortical_class)
+    def get_slice(self, plane: str, slice: int, class_idx: int):
+        return self.get_slicer_function(plane)(slice, class_idx)
 
     def get_slicer_function(self, plane: str):
         return getattr(self, f'get_{plane}_slice')
 
     def get_all_planes_by_coords(self, i_sagittal_slice: int, i_coronal_slice: int,
-                                 i_horizontal_slice: int, cortical_class: int):
-        return [self.get_sagittal_slice(i_sagittal_slice, cortical_class),
-                self.get_coronal_slice(i_coronal_slice, cortical_class),
-                self.get_horizontal_slice(i_horizontal_slice, cortical_class)]
+                                 i_horizontal_slice: int, class_idx: int):
+        return [self.get_sagittal_slice(i_sagittal_slice, class_idx),
+                self.get_coronal_slice(i_coronal_slice, class_idx),
+                self.get_horizontal_slice(i_horizontal_slice, class_idx)]
 
     def get_columndatasources_by_coords(self, i_sagittal_slice: int, i_coronal_slice: int,
-                                        i_horizontal_slice: int, cortical_class: int):
+                                        i_horizontal_slice: int, class_idx: int):
         slices = self.get_all_planes_by_coords(i_sagittal_slice, i_coronal_slice,
-                                               i_horizontal_slice, cortical_class)
+                                               i_horizontal_slice, class_idx)
         slices = [ColumnDataSource(dict(image=[slice])) for slice in slices]
         return dict(zip(self.slice_planes, slices))
 

@@ -2,27 +2,28 @@ import os
 
 import numpy as np
 
-from cortical_layers import cfg
 from .helpers.data_loader import DataLoader
-from .helpers.brain_atlas import BrainAtlas
+from .helpers.subject import Subject
 from cortical_layers.helpers.probability_by_region_matrix import ProbabilityByRegionMatrix
 
-data = DataLoader().read_data()
+data = DataLoader().get_data()
 
 
 class CorticalLayersAnalysis:
     _mean_pbr = _stacked_data = None
-    _mean_pbr_path = '/home/flavus/PycharmProjects/cortical_layers/cortical_layers/test/test_data/all_class_means_aal.npy'
+    _mean_pbr_path = os.path.abspath('./cortical_layers/test/test_data/mean_pbr_matrix.npy')
+    results_dir = os.path.abspath('./cortical_layers/results')
 
-    def __init__(self, probability_by_region_matrices: list = data):
-        self.probability_by_region_matrices = probability_by_region_matrices
+    def __init__(self, subjects: list = data):
+        self.subjects = subjects
+        self.serialize_results()
 
-    def _get_stacked_data(self) -> np.ndarray:
+    def _get_stacked_pbrs(self) -> np.ndarray:
         return np.stack(
-            [pbr_matrix.read_data() for pbr_matrix in self.probability_by_region_matrices], axis=-1)
+            [pbr_matrix.data for pbr_matrix in self.probability_by_region_matrices], axis=-1)
 
     def _get_mean_across_subjects(self) -> ProbabilityByRegionMatrix:
-        return ProbabilityByRegionMatrix(from_array=self.stacked_data.mean(axis=2))
+        return ProbabilityByRegionMatrix(from_array=self.stacked_pbrs.mean(axis=2))
 
     def _load_mean_pbr(self) -> ProbabilityByRegionMatrix:
         if not isinstance(self._mean_pbr, ProbabilityByRegionMatrix):
@@ -33,36 +34,31 @@ class CorticalLayersAnalysis:
                 mean_pbr.save(self._mean_pbr_path)
                 return mean_pbr
 
-    def get_class_over_atlas(self, pbr: ProbabilityByRegionMatrix, class_idx: int):
-        return pbr.atlas.convert_from_dict(pbr.get_region_probability_dict(class_idx))
+    def save_mean_probability_map(self, path: str) -> None:
+        self.mean_pbr.save_all_class_probability_maps(path)
 
-    def save_mean_pbr(self, file_name: str = None) -> None:
-        if not file_name:
-            file_name = self._mean_pbr_path
-        print(f'Saving mean class probabilites over AAL to {file_name}...', end='\t')
-        np.save(file_name, self.all_class_means_over_aal)
-        print('done!')
+    def save_summary_probability_maps(self):
+        path = os.path.join(self.results_dir, 'summary')
+        self.save_mean_probability_map(os.path.join(path, 'mean'))
 
-    def get_all_class_means_over_aal_from_file(self, file_name: str = None):
-        if not file_name:
-            file_name = self._default_class_means_file_path
-        print(f'Reading mean class probabilites over AAL template from {file_name}...', end='\t')
-        pbr = ProbabilityByRegionMatrix(file_name)
-        print('done!')
-        return pbr
+    def serialize_results(self):
+        for subject in self.subjects:
+            subject.save_probability_maps()
+        self.save_summary_probability_maps()
+
 
     @property
-    def stacked_data(self) -> np.ndarray:
+    def stacked_pbrs(self) -> np.ndarray:
         if not isinstance(self._stacked_data, np.ndarray):
-            self._stacked_data = self._get_stacked_data()
+            self._stacked_data = self._get_stacked_pbrs()
         return self._stacked_data
 
     @property
     def mean_pbr(self):
-        if not self._mean_pbr:
+        if not isinstance(self._mean_pbr, ProbabilityByRegionMatrix):
             self._mean_pbr = self._load_mean_pbr()
         return self._mean_pbr
 
     @property
-    def all_class_means_over_atlas(self):
-        return
+    def probability_by_region_matrices(self):
+        return [subject.pbr for subject in self.subjects]
