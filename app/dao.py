@@ -27,8 +27,10 @@ class DataAccessObject:
 
     def create_subject_instance(self, subject_row: tuple) -> Subject:
         subject_id = str(subject_row[0]).zfill(9)
-        attributes = subject_row[1]
-        return Subject(id=subject_id, **attributes.to_dict())
+        attributes = subject_row[1].to_dict()
+        for key in attributes.keys():
+            attributes[key.replace(' ', '_').lower()] = attributes.pop(key)
+        return Subject(id=subject_id, **attributes)
 
     def load_subjects(self, df: pd.DataFrame) -> list:
         return [self.create_subject_instance(subject_row) for subject_row in df.iterrows()]
@@ -180,7 +182,7 @@ class DataAccessObject:
         """
         if not isinstance(self._results_set, list):
             # Defaults to mean
-            self._results_set = None
+            self._results_set = self.summary.get_all_class_means()
         return self._results_set
 
     @results_set.setter

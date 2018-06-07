@@ -1,3 +1,4 @@
+import datetime
 import os
 
 from .probability_by_region_matrix import ProbabilityByRegionMatrix
@@ -6,17 +7,14 @@ results_dir = os.path.abspath('./cortical_layers/results')
 
 
 class Subject:
-    id = None
-    pbr = None
-
-    def __init__(self, **kwargs):
-        self.set_attributes(**kwargs)
+    def __init__(self, id: str, name_id: str = None, sex: str = None, date_of_birth: datetime.date = None,
+                 dominant_hand: str = None):
+        self.id = id
+        self.name_id = name_id
+        self.sex = sex
+        self.date_of_birth = date_of_birth
+        self.dominant_hand = dominant_hand
         self.results_dir = os.path.join(results_dir, self.id)
-
-    def set_attributes(self, **kwargs) -> None:
-        for key, value in kwargs.items():
-            key = key.replace(' ', '_').lower()
-            setattr(self, key, value)
 
     def __eq__(self, other) -> bool:
         return self.id == other.id
@@ -25,7 +23,7 @@ class Subject:
         return os.path.isdir(self.results_dir)
 
     def save_probability_maps(self, verbose=False) -> bool:
-        if self.pbr:
+        if hasattr(self, 'pbr'):
             if not self.has_results_dir():
                 if verbose:
                     print(f'Creating probability maps for subject {self.id}...', end='\t')
@@ -43,6 +41,4 @@ class Subject:
             return False
 
     def add_class_probability_by_region_matrix(self, pbr: ProbabilityByRegionMatrix):
-        self.pbr = pbr
-
-
+        setattr(self, 'pbr', pbr)

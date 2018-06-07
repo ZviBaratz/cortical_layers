@@ -1,4 +1,5 @@
 import bokeh.plotting as bp
+import numpy as np
 
 from bokeh.core.properties import value
 from bokeh.io import curdoc
@@ -18,7 +19,7 @@ Setup
 dao = DataAccessObject()
 
 # Define a results set to view (may be a single subject or a summary)
-dao.results_set = dao.summary.get_all_class_means()
+dao.results_set = dao.get_results_set('mean')
 
 # Create a dictionary to easily associate plots with data sources
 plot_source_dict = {}
@@ -217,6 +218,7 @@ def change_results_set(attr, old, new):
     print('Results set successfully loaded!')
     if not dao.results_set:
         show_no_data_div()
+        return
     else:
         remove_no_data_div()
         for class_idx in classes_checkbox.active:
@@ -224,11 +226,13 @@ def change_results_set(attr, old, new):
                 existing_plot = curdoc().get_model_by_name(f'class_{class_idx}_{plane}')
                 update_plot(existing_plot)
 
-
 select.on_change('value', change_results_set)
 
 # Sliders for slice changing
-sample_img = dao.results_set[0].data
+if dao.results_set:
+    sample_img = dao.results_set[0].data
+else:
+    sample_img = np.zeros((1,1,1))
 sagittal_slice_slider = Slider(start=1, end=sample_img.shape[0], value=1, step=1,
                                title='Sagittal Slice')
 coronal_slice_slider = Slider(start=1, end=sample_img.shape[1], value=1, step=1,
@@ -258,24 +262,25 @@ horizontal_slice_slider.on_change('value', partial(change_slice, plane='horizont
 Create layout and set as document root
 """
 
-subjects_data = dict(dao.subjects_df[['Name ID', 'Sex', 'Date of Birth']])
+subjects_data = dict(dao.subjects_df)
 subjects_data['id'] = dao.subjects_df.index
-source = ColumnDataSource(subjects_data)
+subjects_source = ColumnDataSource(subjects_data)
 columns = [
+    TableColumn(field="id", title="ID"),
     TableColumn(field="Name ID", title="Name ID"),
     TableColumn(field="Sex", title="Sex"),
     TableColumn(field="Date of Birth", title="Date of Birth",
                 formatter=DateFormatter(format='%d/%m/%Y')),
 ]
-subjects_table = DataTable(source=source, columns=columns, width=600, height=900)
+subjects_table = DataTable(source=subjects_source, columns=columns, width=600, height=900)
 
 def change_subject_view(attr, old, new):
-    subject_id = source.data['id'][source.selected.indices[0]]
+    subject_id = subjects_source.data['id'][subjects_source.selected.indices[0]]
     subject_id = str(subject_id).zfill(9)
     dao.selected_subject = dao.get_subject_by_id(subject_id)
     create_subject_summary()
 
-source.on_change('selected', change_subject_view)
+subjects_source.on_change('selected', change_subject_view)
 
 subjects_row = row(subjects_table, subject_div)
 subjects_tab = Panel(child=subjects_row, title='Subjects')

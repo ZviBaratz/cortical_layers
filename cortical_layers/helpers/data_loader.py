@@ -7,12 +7,12 @@ from .probability_by_region_matrix import ProbabilityByRegionMatrix
 from .subject import Subject
 
 
-subjects_data_path = '/home/flavus/PycharmProjects/cortical_layers/cortical_layers/Subjects.xlsx'
+subjects_data_path = os.path.normpath(os.path.abspath('./cortical_layers/Subjects.xlsx'))
 subjects = pd.read_excel(subjects_data_path, sheet_name='Subjects', index_col=0)
 measurements = pd.read_excel(subjects_data_path, sheet_name='Measurements', index_col=0)
 
-# pbr_data_path = '/media/flavus/data/results/cortical_layers'
-pbr_data_path = '/home/flavus/PycharmProjects/cortical_layers/cortical_layers/test/test_data'
+pbr_data_path = os.path.normpath(os.path.abspath('./cortical_layers/data'))
+# pbr_data_path = os.path.normpath(os.path.abspath('./cortical_layers/test/test_data'))
 
 class DataLoader:
     _subjects = []
@@ -20,9 +20,15 @@ class DataLoader:
     data_files_format = 'mat'
     subjects_axis = 2
 
-    def __init__(self, subjects_df: pd.DataFrame = subjects, pbr_path: str = pbr_data_path):
+    def __init__(self, subjects_df: pd.DataFrame = subjects):
+        """
+        This class handles data loading
+
+        :param subjects_df: subjects data
+        :type subjects_df: pd.DataFrame
+        :param pbr_path:
+        """
         self.df = subjects_df
-        self.pbr_path = pbr_path
         self.add_pbrs_to_subjects()
 
     def create_subject_instances(self, subject_row: tuple) -> Subject:
@@ -34,7 +40,7 @@ class DataLoader:
         return [self.create_subject_instances(subject_row) for subject_row in df.iterrows()]
 
     def get_pbr_file_paths(self) -> list:
-        return sorted(glob.glob(os.path.join(self.pbr_path, f'*.{self.data_files_format}')))
+        return sorted(glob.glob(os.path.join(pbr_data_path, f'*.{self.data_files_format}')))
 
     def get_probability_by_region_matrices(self) -> list:
         return [ProbabilityByRegionMatrix(from_file=file) for file in self.get_pbr_file_paths()]
