@@ -1,12 +1,15 @@
 import bokeh.plotting as bp
 
+from bokeh.core.properties import value
 from bokeh.io import curdoc
 from bokeh.layouts import row, column, widgetbox
 from bokeh.models import HoverTool, ColumnDataSource
-from bokeh.models.widgets import CheckboxGroup, Div, Slider, Select
+from bokeh.models.widgets import CheckboxGroup, Div, Slider, Select, Panel, Tabs, DataTable, \
+    DateFormatter, TableColumn
 from functools import partial
 
-from dao import DataAccessObject, n_classes
+from dao import DataAccessObject
+from cfg import n_classes
 
 """
 Setup
@@ -23,6 +26,9 @@ plot_source_dict = {}
 """
 General plotting functions
 """
+
+no_data_div = Div(text=f'No data to display!', name='no_data_div')
+subject_div = Div(text='', name='subject_div', style={'margin': '20px'})
 
 
 def plot_slice(plane: str, i_slice: int, class_idx: int):
@@ -124,6 +130,51 @@ def plot_multi_planar(i_sagittal: int, i_coronal: int, i_horizontal: int, class_
     return plots
 
 
+def plot_area_across_regions(pbr):
+    source_dict = {f'Class {class_idx+1}': pbr[:, class_idx] for class_idx in range(pbr.shape[1])}
+    classes = list((source_dict.keys()))[::-1]
+    regions = [str(i) for i in range(1, 1001)]
+    source_dict['regions'] = regions
+    source = ColumnDataSource(data=source_dict)
+    plot = bp.figure(x_range=regions, title='Class Area by AAL Region', plot_width=1000,
+                     toolbar_location=None, tools="")
+    plot.vbar_stack(classes, x='regions', width=0.1,
+                    color=['blue', 'red', 'yellow', 'green', 'purple', 'grey'],
+                    source=source, legend=[value(x) for x in classes])
+    plot.y_range.start = 0
+    plot.y_range.end = 1
+    plot.yaxis.axis_label = 'Class Probability'
+    plot.xaxis.axis_label = 'AAL Region'
+    # plot.xaxis[0].ticker.ticks = list(range(0,1001,50))[1:]
+    plot.legend.location = "top_right"
+    csf = Div(text='CSF', style={'text-align': 'center'}, width=1000)
+    myelin = Div(text='Myelin', style={'text-align': 'center'}, width=1000)
+    result = column(csf, plot, myelin)
+    return result
+
+def create_subject_summary():
+    subject_div.text = ''
+    subject = dao.selected_subject
+    attributes = ['id', 'name_id', 'sex', 'gender', 'date_of_birth', 'dominant_hand']
+    for att in attributes:
+        value = getattr(subject, att)
+        subject_div.text += f'{att}: {value}<br />'
+
+
+def show_no_data_div():
+    root_layout = curdoc().get_model_by_name('all_class_figures')
+    sublayouts = root_layout.children
+    sublayouts.append(no_data_div)
+
+
+def remove_no_data_div():
+    div = curdoc().get_model_by_name('no_data_div')
+    if div:
+        root_layout = curdoc().get_model_by_name('all_class_figures')
+        sublayouts = root_layout.children
+        sublayouts.remove(no_data_div)
+
+
 """
 Widgets
 """
@@ -134,6 +185,8 @@ classes_checkbox = CheckboxGroup(
 
 
 def update_visible_classes(attr, old, new):
+    if not dao.results_set:
+        return
     root_layout = curdoc().get_model_by_name('all_class_figures')
     sublayouts = root_layout.children
     for class_idx in range(n_classes):
@@ -156,12 +209,20 @@ select = Select(title="Results set:", value="mean", options=options)
 
 
 def change_results_set(attr, old, new):
-    set_id = select.value.replace('/', '')
+    set_id = select.value
+    if set_id not in ['mean']:
+        set_id = set_id[-9:]
+    print('\nLooking for:\t' + set_id)
     dao.results_set = dao.get_results_set(set_id)
-    for class_idx in classes_checkbox.active:
-        for plane in ('sagittal', 'coronal', 'horizontal'):
-            existing_plot = curdoc().get_model_by_name(f'class_{class_idx}_{plane}')
-            update_plot(existing_plot)
+    print('Results set successfully loaded!')
+    if not dao.results_set:
+        show_no_data_div()
+    else:
+        remove_no_data_div()
+        for class_idx in classes_checkbox.active:
+            for plane in ('sagittal', 'coronal', 'horizontal'):
+                existing_plot = curdoc().get_model_by_name(f'class_{class_idx}_{plane}')
+                update_plot(existing_plot)
 
 
 select.on_change('value', change_results_set)
@@ -181,6 +242,8 @@ sliders = {'sagittal': sagittal_slice_slider, 'coronal': coronal_slice_slider,
 
 
 def change_slice(attr, old, new, plane: str):
+    if not dao.results_set:
+        return
     for class_idx in classes_checkbox.active:
         existing_plot = curdoc().get_model_by_name(f'class_{class_idx}_{plane}')
         update_plot(existing_plot)
@@ -190,12 +253,40 @@ sagittal_slice_slider.on_change('value', partial(change_slice, plane='sagittal')
 coronal_slice_slider.on_change('value', partial(change_slice, plane='coronal'))
 horizontal_slice_slider.on_change('value', partial(change_slice, plane='horizontal'))
 
+
 """
 Create layout and set as document root
 """
+
+subjects_data = dict(dao.subjects_df[['Name ID', 'Sex', 'Date of Birth']])
+subjects_data['id'] = dao.subjects_df.index
+source = ColumnDataSource(subjects_data)
+columns = [
+    TableColumn(field="Name ID", title="Name ID"),
+    TableColumn(field="Sex", title="Sex"),
+    TableColumn(field="Date of Birth", title="Date of Birth",
+                formatter=DateFormatter(format='%d/%m/%Y')),
+]
+subjects_table = DataTable(source=source, columns=columns, width=600, height=900)
+
+def change_subject_view(attr, old, new):
+    subject_id = source.data['id'][source.selected.indices[0]]
+    subject_id = str(subject_id).zfill(9)
+    dao.selected_subject = dao.get_subject_by_id(subject_id)
+    create_subject_summary()
+
+source.on_change('selected', change_subject_view)
+
+subjects_row = row(subjects_table, subject_div)
+subjects_tab = Panel(child=subjects_row, title='Subjects')
+
+area_plot = plot_area_across_regions(dao.summary.mean_pbr)
+summary_stats_tab = Panel(child=area_plot, title="Summary Statistics")
+
 all_class_figures = column(name='all_class_figures')
 final = row(widgetbox(select, classes_checkbox, sagittal_slice_slider, coronal_slice_slider,
-                      horizontal_slice_slider), all_class_figures,
-            name='main_layout')
+                      horizontal_slice_slider), all_class_figures, name='main_layout')
+atlas_tab = Panel(child=final, title='Atlas Projection')
+tabs = Tabs(tabs=[subjects_tab, summary_stats_tab, atlas_tab])
 
-curdoc().add_root(final)
+curdoc().add_root(tabs)

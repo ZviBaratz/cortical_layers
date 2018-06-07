@@ -3,7 +3,6 @@ import os
 import numpy as np
 
 from .helpers.data_loader import DataLoader
-from .helpers.subject import Subject
 from cortical_layers.helpers.probability_by_region_matrix import ProbabilityByRegionMatrix
 
 data = DataLoader().get_data()
@@ -11,8 +10,8 @@ data = DataLoader().get_data()
 
 class CorticalLayersAnalysis:
     _mean_pbr = _stacked_data = None
-    _mean_pbr_path = os.path.abspath('./cortical_layers/test/test_data/mean_pbr_matrix.npy')
     results_dir = os.path.abspath('./cortical_layers/results')
+    _mean_pbr_path = os.path.join(results_dir, 'summary', 'mean', 'mean_pbr_matrix.npy')
 
     def __init__(self, subjects: list = data):
         self.subjects = subjects
@@ -42,9 +41,13 @@ class CorticalLayersAnalysis:
         self.save_mean_probability_map(os.path.join(path, 'mean'))
 
     def serialize_results(self):
+        changes = False
         for subject in self.subjects:
-            subject.save_probability_maps()
-        self.save_summary_probability_maps()
+            saved = subject.save_probability_maps()
+            if saved and not changes:
+                changes = True
+        if changes:
+            self.save_summary_probability_maps()
 
 
     @property
@@ -61,4 +64,4 @@ class CorticalLayersAnalysis:
 
     @property
     def probability_by_region_matrices(self):
-        return [subject.pbr for subject in self.subjects]
+        return [subject.pbr for subject in self.subjects if subject.pbr is not None]

@@ -3,15 +3,18 @@ import os
 import numpy as np
 
 from brain_matrix import BrainMatrix
-from cfg import results_dir, n_classes
+from cfg import raw_data_dir, results_dir, n_classes
 
 
 class SummaryResults:
+    mean_pbr_path = os.path.join(results_dir, 'summary', 'mean', 'mean_pbr_matrix.npy')
+
     def __init__(self):
         """
         Class to help access summary results as a results set
         """
         self.path = os.path.join(results_dir, 'summary')
+        self.mean_pbr = np.load(self.mean_pbr_path)
 
     def get_mean_probability_map_path(self, class_idx: int, atlas_name: str = 'AAL') -> str:
         """

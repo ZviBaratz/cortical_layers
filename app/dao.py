@@ -2,23 +2,36 @@ import glob
 import os
 
 import numpy as np
+import pandas as pd
 
 from brain_matrix import BrainMatrix
-from cfg import raw_data_dir, results_dir, n_classes
+from cfg import raw_data_dir, results_dir, n_classes, subjects_data_path
 from scipy.io import loadmat
 from subject import Subject
 from summary_results import SummaryResults
 
+subjects_df = pd.read_excel(subjects_data_path, sheet_name='Subjects', index_col=0)
+
+
 
 class DataAccessObject:
     _results_set = None
+    _subjects = None
+    _selected_subject = None
     raw_data_format = 'mat'
     raw_data_key = 'results'
-    subjects = []
     summary = SummaryResults()
 
-    def __init__(self):
-        self.load_subjects_data()
+    def __init__(self, subjects_df: pd.DataFrame = subjects_df):
+        self.subjects_df = subjects_df
+
+    def create_subject_instance(self, subject_row: tuple) -> Subject:
+        subject_id = str(subject_row[0]).zfill(9)
+        attributes = subject_row[1]
+        return Subject(id=subject_id, **attributes.to_dict())
+
+    def load_subjects(self, df: pd.DataFrame) -> list:
+        return [self.create_subject_instance(subject_row) for subject_row in df.iterrows()]
 
     def get_raw_data_paths(self) -> list:
         """
@@ -40,24 +53,6 @@ class DataAccessObject:
         """
         return loadmat(path)[self.raw_data_key]
 
-    def load_subjects_data(self) -> None:
-        """
-        Updates the classes subjects list using (and including) their probability be region matrices
-        """
-        self.subjects = []
-        for path in self.raw_data_paths:
-
-            # Parse file name to infer data attributes
-            subject_name, scan_date, _ = os.path.basename(path).split('_')
-
-            # Create a subject instance
-            subject_id = subject_name + scan_date
-            pbr = self.load_pbr_from_mat(path)
-            subject = Subject(subject_id, pbr)
-
-            # Add to subjects list
-            self.subjects += [subject]
-
     def get_subject_by_id(self, subject_id: str) -> Subject:
         """
         Get subject instances by subject ID (name + scan_date)
@@ -67,10 +62,9 @@ class DataAccessObject:
         :return: subject instance
         :rtype: Subject
         """
-        result = [subject for subject in self.subjects if subject.subject_id == subject_id]
-        if result:
+        result = [subject for subject in self.subjects if subject.id == subject_id]
+        if len(result) is not 0:
             return result[0]
-        return None
 
     def get_results_set(self, identifier: str) -> list:
         """
@@ -83,16 +77,21 @@ class DataAccessObject:
         """
         # Get summary results
         if identifier == 'mean':
-            return self.summary.get_all_class_means()
+            print('Retrieving class mean probabilites result set...', end='\t')
+            all_class_means = self.summary.get_all_class_means()
+            print('done!')
+            return all_class_means
 
         # Get single subject results
         subject = self.get_subject_by_id(identifier)
-        if subject:
-            return subject.get_all_probability_maps()
+        if isinstance(subject, Subject):
+            print(f'Retrieving result set for subject {subject.id}...')
+            probability_maps = subject.get_all_probability_maps()
+            print('done!')
+            return probability_maps
 
         # Handle non found
         print(f'Invalid results set: {identifier}!')
-        return []
 
     def validate_results_set(self, value) -> bool:
         """
@@ -101,10 +100,15 @@ class DataAccessObject:
         :param value: potential results set
         :return:
         """
+        print('Validating assigned results set...', end='\t')
+        if value is None or len(value) is 0:
+            print('done!')
+            return True
         is_list = isinstance(value, list)
         of_brain_matrices = all([isinstance(obj, BrainMatrix) for obj in value])
         assert is_list and of_brain_matrices, 'Results set must be a list of BrainMatrix instances'
         assert len(value) is n_classes, f'Results set must be of length {n_classes}'
+        print('done!')
         return True
 
     def get_class_brain_martix(self, class_idx: int) -> BrainMatrix:
@@ -134,6 +138,20 @@ class DataAccessObject:
         return self.get_class_brain_martix(class_idx).create_slice(plane, i_slice)
 
     @property
+    def subjects(self) -> list:
+        if not isinstance(self._subjects, list):
+            self._subjects = self.load_subjects(self.subjects_df)
+        return self._subjects
+
+    @subjects.setter
+    def subjects(self, value: pd.DataFrame) -> None:
+        try:
+            self._subjects = self.load_subjects(value)
+        except Exception as e:
+            print(e.args)
+            print('Failed to initialize subject instances from DataFrame!')
+
+    @property
     def raw_data_paths(self) -> list:
         """
         Returns all probability by region matrices
@@ -144,6 +162,15 @@ class DataAccessObject:
         return self.get_raw_data_paths()
 
     @property
+    def selected_subject(self):
+        return self._selected_subject
+
+    @selected_subject.setter
+    def selected_subject(self, value):
+        if isinstance(value, Subject):
+            self._selected_subject = value
+
+    @property
     def results_set(self) -> list:
         """
         Current results set to be accessed
@@ -151,13 +178,13 @@ class DataAccessObject:
         :return: all class probability brain matrices
         :rtype: list of BrainMatrix instances
         """
-        if not self._results_set:
+        if not isinstance(self._results_set, list):
             # Defaults to mean
-            self._results_set = self.summary.get_all_class_means()
+            self._results_set = None
         return self._results_set
 
     @results_set.setter
-    def results_set(self, value) -> None:
+    def results_set(self, value: list) -> None:
         """
         Results set setter - validates a list of BrainMatrix instances to be set as results set
 

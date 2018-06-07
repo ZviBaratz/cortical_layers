@@ -8,4 +8,7 @@ venv/
 
 # Data
 data/
+cortical_layers/data/
+cortical_layers/test/test_data/
 **.npy
+**.xlsx

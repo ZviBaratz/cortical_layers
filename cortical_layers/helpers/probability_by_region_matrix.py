@@ -11,8 +11,7 @@ aal = BrainAtlas(name='AAL', path=os.path.abspath('./cortical_layers/templates/A
 class ProbabilityByRegionMatrix:
     _raw_data = None
     _data = None
-    _subject = None
-    path = None
+    path = ''
     atlas_regions_axis = 0
     class_idx_axis = 1
     n_classes = 6
@@ -70,23 +69,6 @@ class ProbabilityByRegionMatrix:
             file_path = os.path.join(path, f'class_{class_idx}_{self.atlas.name}')
             self.save_class_probability_map(class_idx, file_path)
 
-    def get_subject_attributes_from_file_name(self):
-        try:
-            name_id, date_id, _ = os.path.basename(self.path).split('_')
-            return {'name': name_id, 'date': date_id}
-        except Exception as e:
-            print(e)
-            print('Could not resolve subject attributes!')
-            return None
-
-    # def validate_subject(self, subject: Subject):
-    #     file_name_atts = self.subject_atts_from_file_name
-    #     if file_name_atts:
-    #         if all([getattr(subject, key) == value for key, value in file_name_atts.items()]):
-    #             return True
-    #         return False
-    #     return True
-
     @property
     def data(self):
         return self._data
@@ -101,23 +83,8 @@ class ProbabilityByRegionMatrix:
         return self.atlas.n_regions
 
     @property
-    def subject_atts_from_file_name(self):
-        return self.get_subject_attributes_from_file_name()
-
-    # @property
-    # def subject(self):
-    #     return self._subject
-    #
-    # @subject.setter
-    # def subject(self, value):
-    #     if isinstance(value, Subject):
-    #         if self.validate_subject(value):
-    #             setattr(value, 'pbr', self)
-    #             self._subject = value
-    #     elif not value:
-    #         if self.subject_atts_from_file_name:
-    #             self._subject = Subject(**self.subject_atts_from_file_name, pbr=self)
-    #         else:
-    #             self._subject = None
-    #     else:
-    #         raise ValueError('Subject must be an instance of the subject class!')
+    def subject_id(self) -> str:
+        if self.path:
+            return str(os.path.basename(self.path).split('.')[0])
+        else:
+            return ''
