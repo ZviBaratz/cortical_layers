@@ -1,89 +1,43 @@
-import glob
-import os
-
-import pandas as pd
-
-from .probability_by_region_matrix import ProbabilityByRegionMatrix
+from .cantab.cantab_results import CantabResults
+from .cantab.row_by_session import RowBySessionResults
+from .cortical_layers.cortical_layers_results import CorticalLayersResults
 from .subject import Subject
+from .xlsx_parser.xlsx_praser import XlsxParser
+from ..cfg import subjects_data_path
 
+cortical_layers_results = CorticalLayersResults()
+subjects = XlsxParser(subjects_data_path).subjects
+cantab_results = RowBySessionResults()
 
-subjects_data_path = os.path.normpath(os.path.abspath('./cortical_layers/Subjects.xlsx'))
-subjects = pd.read_excel(subjects_data_path, sheet_name='Subjects', index_col=0)
-measurements = pd.read_excel(subjects_data_path, sheet_name='Measurements', index_col=0)
-
-pbr_data_path = os.path.normpath(os.path.abspath('./cortical_layers/data'))
-# pbr_data_path = os.path.normpath(os.path.abspath('./cortical_layers/test/test_data'))
 
 class DataLoader:
-    _subjects = []
-    _probability_by_region_matrix_instances = []
-    data_files_format = 'mat'
-    subjects_axis = 2
-
-    def __init__(self, subjects_df: pd.DataFrame = subjects):
-        """
-        This class handles data loading
-
-        :param subjects_df: subjects data
-        :type subjects_df: pd.DataFrame
-        :param pbr_path:
-        """
-        self.df = subjects_df
-        self.add_pbrs_to_subjects()
-
-    def create_subject_instances(self, subject_row: tuple) -> Subject:
-        subject_id = str(subject_row[0]).zfill(9)
-        attributes = subject_row[1]
-        return Subject(id=subject_id, **attributes.to_dict())
-
-    def load_subjects(self, df: pd.DataFrame) -> list:
-        return [self.create_subject_instances(subject_row) for subject_row in df.iterrows()]
-
-    def get_pbr_file_paths(self) -> list:
-        return sorted(glob.glob(os.path.join(pbr_data_path, f'*.{self.data_files_format}')))
-
-    def get_probability_by_region_matrices(self) -> list:
-        return [ProbabilityByRegionMatrix(from_file=file) for file in self.get_pbr_file_paths()]
+    def __init__(self, subjects: list = subjects,
+                 cortical_layers: CorticalLayersResults = cortical_layers_results,
+                 cantab: RowBySessionResults = cantab_results):
+        self.subjects = subjects
+        self.cortical_layers = cortical_layers
+        self.cantab = cantab
+        self.add_cortical_layers_results_to_subjects()
+        self.add_cantab_results_to_subjects()
 
     def get_subject_by_id(self, subject_id: str) -> Subject:
         result = [subject for subject in self.subjects if subject.id == subject_id]
         if result:
             return result[0]
 
-    def add_pbrs_to_subjects(self) -> None:
-        for pbr in self.probability_by_region_matrix_instances:
-            subject = self.get_subject_by_id(pbr.subject_id)
-            if subject:
-                subject.add_class_probability_by_region_matrix(pbr)
+    def add_cortical_layers_results_to_subjects(self) -> None:
+        for pbr in self.cortical_layers.get_probability_by_region_matrix_instances():
+            subject_id = pbr.subject_id
+            subject = self.get_subject_by_id(subject_id)
+            if isinstance(subject, Subject):
+                subject.add_data('pbr', pbr)
             else:
-                print(f'Failed to locate subject {pbr.subject_id}, skipping...')
+                raise ValueError(f'Invalid subject ID: {subject_id}!')
 
-    def get_data(self) -> list:
-        try:
-            data = self.subjects
-            print(f'Successfully loaded data for {len(data)} subjects!')
-            return data
-        except Exception as e:
-            print('Failed to read subjects data!')
-            print(e)
-
-    @property
-    def probability_by_region_matrix_instances(self) -> list:
-        if not self._probability_by_region_matrix_instances:
-            self._probability_by_region_matrix_instances = self.get_probability_by_region_matrices()
-        return self._probability_by_region_matrix_instances
-
-    @property
-    def subjects(self) -> list:
-        if not self._subjects:
-            self._subjects = self.load_subjects(self.df)
-        return self._subjects
-
-    @subjects.setter
-    def subjects(self, value: pd.DataFrame) -> None:
-        try:
-            self._subjects = self.load_subjects(value)
-        except Exception as e:
-            print(e)
-            print('Failed to initialize subject instances from DataFrame!')
-
+    def add_cantab_results_to_subjects(self) -> None:
+        for subject in self.subjects:
+            name_id = subject.name_id
+            dob = subject.date_of_birth.strftime('%d/%m/%y')
+            results_series = self.cantab.get_subject_results(name_id, dob)
+            if isinstance(results_series, CantabResults):
+                subject.add_data('cantab', results_series)

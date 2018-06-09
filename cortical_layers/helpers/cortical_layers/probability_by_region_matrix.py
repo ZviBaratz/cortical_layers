@@ -3,21 +3,20 @@ import os
 import numpy as np
 
 from scipy.io import loadmat
-from .brain_atlas import BrainAtlas
-from ..cfg import results_dir, n_classes
+from cortical_layers.helpers.cortical_layers.brain_atlas import BrainAtlas
+from cortical_layers.cfg import results_dir, n_classes, atlas
 
-aal = BrainAtlas(name='AAL', path=os.path.abspath('./cortical_layers/templates/AAL1000.nii'))
+MAT_DATA_KEY = 'results'
 
 
 class ProbabilityByRegionMatrix:
     _data = None
     _path = ''
-    data_key = 'results'
     atlas_regions_axis = 0
     class_idx_axis = 1
 
     def __init__(self, from_file: str = False, from_array: np.ndarray = False,
-                 atlas: BrainAtlas = aal):
+                 atlas: BrainAtlas = atlas):
         """
         Cortical class probability by region utility class
 
@@ -29,11 +28,15 @@ class ProbabilityByRegionMatrix:
         :type atlas: BrainAtlas
         """
         self.atlas = atlas
+        self.load_data(from_file, from_array)
 
+    def load_data(self, from_file, from_array):
         if isinstance(from_file, str) and os.path.isfile(from_file):
             self.read_from_file(from_file)
         elif isinstance(from_array, np.ndarray):
             self.from_array(from_array)
+        else:
+            raise ValueError('Invalid input!')
 
     def read_from_file(self, path: str) -> None:
         """
@@ -45,7 +48,7 @@ class ProbabilityByRegionMatrix:
         """
         # Read .mat files
         if path.endswith('.mat'):
-            self.data = loadmat(path)[self.data_key]
+            self.data = loadmat(path)[MAT_DATA_KEY]
         # Read .npy files
         elif path.endswith('.npy'):
             self.data = np.load(path)
@@ -87,6 +90,14 @@ class ProbabilityByRegionMatrix:
         """
         return data.shape[self.class_idx_axis] == n_classes
 
+    def check_n_regions(self, data: np.ndarray):
+        n_data_regions = data.shape[self.atlas_regions_axis]
+        if n_data_regions is not self.atlas.n_regions:
+            print(f'WARNING: ProbabilityByRegionMatrix data contains {n_data_regions} regions but '
+                  f'atlas has {self.atlas.n_regions}!')
+            return False
+        return True
+
     def validate_data(self, data: np.ndarray) -> bool:
         """
         Run all necessary validations for probability by region data
@@ -96,7 +107,9 @@ class ProbabilityByRegionMatrix:
         :return: validation result
         :rtype: bool
         """
-        assert self.check_n_classes(data), f'Data must have {n_classes} in the {self.class_idx_axis} axis!'
+        assert self.check_n_classes(
+            data), f'Data must have {n_classes} in the {self.class_idx_axis} axis!'
+        self.check_n_regions(data)
         return True
 
     def get_region_probability_dict(self, class_idx: int) -> dict:
@@ -134,10 +147,7 @@ class ProbabilityByRegionMatrix:
         :return:
         """
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        if not os.path.isfile(path):
-            np.save(path, self.create_class_probability_map(class_idx))
-        else:
-            print(f'{path} already exists! skipping...')
+        np.save(path, self.create_class_probability_map(class_idx))
 
     def save_all_class_probability_maps(self, path: str) -> None:
         """
@@ -229,7 +239,7 @@ class ProbabilityByRegionMatrix:
         :return: number of brain atlas regions
         :rtype: int
         """
-        return self.atlas.n_regions
+        return self.data.shape[self.atlas_regions_axis]
 
     @property
     def subject_id(self) -> str:
