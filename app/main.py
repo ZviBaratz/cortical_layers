@@ -1,3 +1,6 @@
+import sys, os
+sys.path.append(os.path.abspath(os.path.join('..', 'research')))
+
 import bokeh.plotting as bp
 import numpy as np
 
@@ -7,17 +10,17 @@ from bokeh.layouts import row, column, widgetbox
 from bokeh.models import HoverTool, ColumnDataSource
 from bokeh.models.widgets import CheckboxGroup, Div, Slider, Select, Panel, Tabs, DataTable, \
     DateFormatter, TableColumn
+from datetime import datetime
 from functools import partial
 
-from dao import DataAccessObject
-from cfg import n_classes
+from research.dao import DataAccessObject, n_classes
+
+dao = DataAccessObject()
+
 
 """
 Setup
 """
-# Create a DAO to easily access analysis results
-dao = DataAccessObject()
-
 # Define a results set to view (may be a single subject or a summary)
 dao.results_set = dao.get_results_set('mean')
 
@@ -28,7 +31,7 @@ plot_source_dict = {}
 General plotting functions
 """
 
-no_data_div = Div(text=f'No data to display!', name='no_data_div')
+no_data_div = Div(text='No data to display!', name='no_data_div')
 subject_div = Div(text='', name='subject_div', style={'margin': '20px'})
 
 
@@ -132,7 +135,7 @@ def plot_multi_planar(i_sagittal: int, i_coronal: int, i_horizontal: int, class_
 
 
 def plot_area_across_regions(pbr):
-    source_dict = {f'Class {class_idx+1}': pbr[:, class_idx] for class_idx in range(pbr.shape[1])}
+    source_dict = {f'Class {class_idx+1}': pbr.data[:, class_idx] for class_idx in range(pbr.data.shape[1])}
     classes = list((source_dict.keys()))[::-1]
     regions = [str(i) for i in range(1, 1001)]
     source_dict['regions'] = regions
@@ -155,26 +158,38 @@ def plot_area_across_regions(pbr):
 
 def create_subject_summary():
     subject_div.text = ''
-    subject = dao.selected_subject
-    attributes = ['id', 'name_id', 'sex', 'gender', 'date_of_birth', 'dominant_hand']
-    for att in attributes:
-        value = getattr(subject, att)
+    subject = dao.chosen_subject
+    att_dict = subject.to_dict()
+    for att, value in att_dict.items():
+        att = att.replace('_', ' ').capitalize()
         subject_div.text += f'{att}: {value}<br />'
 
+    subject_div.text += '<br /><br />'
+    subject_div.text += 'Cortical layers results: '
+    if hasattr(subject, 'pbr'):
+        subject_div.text += 'TRUE'
+    else:
+        subject_div.text += 'FALSE'
 
-def show_no_data_div():
-    root_layout = curdoc().get_model_by_name('all_class_figures')
-    sublayouts = root_layout.children
-    sublayouts.append(no_data_div)
+    if hasattr(subject, 'measurements'):
+        subject_div.text += '<br /><br /><br />'
+        subject_div.text += 'MEASUREMENTS'
+        subject_div.text += '<br />'
+        df = subject.measurements.df
+        dates = df['date'].unique()
+        for date in dates:
+            formatted_date = datetime.utcfromtimestamp(date.astype(datetime) * 1e-9)
+            subject_div.text += f'<br />{formatted_date.date()}<br />'
+            current_meas = df.loc[df['date'] == date]
+            for i, measurement in current_meas.iterrows():
+                value = measurement["value"]
+                if value is not np.nan:
+                    subject_div.text += f'{measurement["measurement"]}: {value}<br />'
 
 
-def remove_no_data_div():
-    div = curdoc().get_model_by_name('no_data_div')
-    if div:
-        root_layout = curdoc().get_model_by_name('all_class_figures')
-        sublayouts = root_layout.children
-        sublayouts.remove(no_data_div)
-
+def show_message(txt: str, style: dict = None):
+    msg_div.text = txt
+    msg_div.style = style
 
 """
 Widgets
@@ -204,8 +219,10 @@ def update_visible_classes(attr, old, new):
 
 classes_checkbox.on_change('active', update_visible_classes)
 
+msg_div = Div(text='', name='message')
+
 # Select menu to choose the displayed results set (single subject or summary)
-options = ['mean'] + [str(subject) for subject in dao.subjects]
+options = ['mean'] + [str(subject) for subject in dao.subjects if hasattr(subject, 'pbr')]
 select = Select(title="Results set:", value="mean", options=options)
 
 
@@ -213,14 +230,13 @@ def change_results_set(attr, old, new):
     set_id = select.value
     if set_id not in ['mean']:
         set_id = set_id[-9:]
-    print('\nLooking for:\t' + set_id)
+    show_message(f'Loading results for subject {select.value}...', style={'color': 'orange'})
     dao.results_set = dao.get_results_set(set_id)
-    print('Results set successfully loaded!')
     if not dao.results_set:
-        show_no_data_div()
+        show_message(f'Could not find results for {select.value}!', style={'color': 'red'})
         return
     else:
-        remove_no_data_div()
+        show_message(f'Displaying reults for {select.value}', style={'color': 'green'})
         for class_idx in classes_checkbox.active:
             for plane in ('sagittal', 'coronal', 'horizontal'):
                 existing_plot = curdoc().get_model_by_name(f'class_{class_idx}_{plane}')
@@ -262,14 +278,15 @@ horizontal_slice_slider.on_change('value', partial(change_slice, plane='horizont
 Create layout and set as document root
 """
 
-subjects_data = dict(dao.subjects_df)
-subjects_data['id'] = dao.subjects_df.index
+subjects_df = dao.get_subject_attributes_df()
+subjects_data = dict(subjects_df)
+subjects_data['id'] = subjects_df.index
 subjects_source = ColumnDataSource(subjects_data)
 columns = [
     TableColumn(field="id", title="ID"),
-    TableColumn(field="Name ID", title="Name ID"),
-    TableColumn(field="Sex", title="Sex"),
-    TableColumn(field="Date of Birth", title="Date of Birth",
+    TableColumn(field="name_id", title="Name ID"),
+    TableColumn(field="sex", title="Sex"),
+    TableColumn(field="date_of_birth", title="Date of Birth",
                 formatter=DateFormatter(format='%d/%m/%Y')),
 ]
 subjects_table = DataTable(source=subjects_source, columns=columns, width=600, height=900)
@@ -277,7 +294,7 @@ subjects_table = DataTable(source=subjects_source, columns=columns, width=600, h
 def change_subject_view(attr, old, new):
     subject_id = subjects_source.data['id'][subjects_source.selected.indices[0]]
     subject_id = str(subject_id).zfill(9)
-    dao.selected_subject = dao.get_subject_by_id(subject_id)
+    dao.chosen_subject = dao.get_subject_by_id(subject_id)
     create_subject_summary()
 
 subjects_source.on_change('selected', change_subject_view)
@@ -285,13 +302,15 @@ subjects_source.on_change('selected', change_subject_view)
 subjects_row = row(subjects_table, subject_div)
 subjects_tab = Panel(child=subjects_row, title='Subjects')
 
-area_plot = plot_area_across_regions(dao.summary.mean_pbr)
+area_plot = plot_area_across_regions(dao.cla.mean_pbr)
 summary_stats_tab = Panel(child=area_plot, title="Summary Statistics")
 
 all_class_figures = column(name='all_class_figures')
-final = row(widgetbox(select, classes_checkbox, sagittal_slice_slider, coronal_slice_slider,
-                      horizontal_slice_slider), all_class_figures, name='main_layout')
+control = widgetbox(select, classes_checkbox, sagittal_slice_slider, coronal_slice_slider,
+                      horizontal_slice_slider, msg_div, name='figure_control')
+final = row(control, all_class_figures, name='main_layout')
 atlas_tab = Panel(child=final, title='Atlas Projection')
 tabs = Tabs(tabs=[subjects_tab, summary_stats_tab, atlas_tab])
 
 curdoc().add_root(tabs)
+
