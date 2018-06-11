@@ -28,6 +28,12 @@ class DataAccessObject:
     def get_subject_by_id(self, subject_id: str) -> Subject:
         return data_loader.get_subject_by_id(subject_id)
 
+    def get_scores(self, measurement_name: str):
+        scores_dict = {
+        subject.id: subject.measurements.get_measurement_data(measurement_name)['value'].values[0]
+        for subject in self.subjects}
+        return pd.DataFrame(data=list(scores_dict.values()), index=list(scores_dict.keys()))
+
     def get_probability_by_region_matrices(self):
         return [subject.pbr for subject in self.subjects if hasattr(subject, 'pbr')]
 

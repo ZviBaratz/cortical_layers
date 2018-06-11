@@ -2,6 +2,8 @@ import glob
 import os
 
 import numpy as np
+import pandas as pd
+import statsmodels.api as sm
 
 from .cfg import n_classes, results_dir
 from .probability_by_region_matrix import ProbabilityByRegionMatrix
@@ -17,6 +19,11 @@ class CorticalLayersAnalysis:
 
     def __init__(self, pbr_matrices: list):
         self.pbrs = pbr_matrices
+
+    def get_pbr_by_subject_id(self, subject_id: str):
+        result = [pbr for pbr in self.pbrs if pbr.subject_id == subject_id]
+        if result:
+            return result[0]
 
     def get_stacked_pbrs(self) -> np.ndarray:
         """
@@ -73,6 +80,36 @@ class CorticalLayersAnalysis:
         files = glob.glob(os.path.join(dir_path, '*.npy'))
         if os.path.isdir(dir_path) and files:
             return self.load_probability_maps(files)
+
+    def calculate_region_mlr_model(self, region_idx: int, scores: pd.DataFrame):
+        columns = [f'class_{class_idx}' for class_idx in range(1, n_classes + 1)]
+        index = [pbr.subject_id for pbr in self.pbrs]
+        X = pd.DataFrame(columns=columns, index=index)
+        scores = scores[scores.index.isin(X.index)]
+        for subject_id, score in scores.iterrows():
+            pbr = self.get_pbr_by_subject_id(subject_id)
+            if isinstance(pbr, ProbabilityByRegionMatrix):
+                X.loc[subject_id] = pbr.data[region_idx, :]
+        X = X.dropna()
+        model = sm.OLS(scores, X.astype(float)).fit()
+        # predictions = model.predict(X)
+        return model #, predictions
+
+    def calculate_linear_model_dict(self, scores: pd.DataFrame):
+        results_dict = {'region': [], 'rsquared': [], 'rsquared_adj': [], 'pvalues': []}
+        for region_idx in range(1000):
+            model = self.calculate_region_mlr_model(region_idx, scores)
+            results_dict['region'].append(region_idx)
+            results_dict['rsquared'].append(model.rsquared)
+            results_dict['rsquared_adj'].append(model.rsquared_adj)
+            results_dict['pvalues'].append(model.pvalues)
+        return results_dict
+
+    def calculate_linear_model(self, scores: pd.DataFrame):
+        results_dict = self.calculate_linear_model_dict(scores)
+        df = pd.DataFrame.from_dict(results_dict)
+        df = df.set_index('region')
+        return df
 
     @property
     def stacked_pbrs(self) -> np.ndarray:

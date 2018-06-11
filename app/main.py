@@ -1,4 +1,5 @@
 import sys, os
+
 sys.path.append(os.path.abspath(os.path.join('..', 'research')))
 
 import bokeh.plotting as bp
@@ -16,7 +17,6 @@ from functools import partial
 from research.dao import DataAccessObject, n_classes
 
 dao = DataAccessObject()
-
 
 """
 Setup
@@ -135,7 +135,8 @@ def plot_multi_planar(i_sagittal: int, i_coronal: int, i_horizontal: int, class_
 
 
 def plot_area_across_regions(pbr):
-    source_dict = {f'Class {class_idx+1}': pbr.data[:, class_idx] for class_idx in range(pbr.data.shape[1])}
+    source_dict = {f'Class {class_idx+1}': pbr.data[:, class_idx] for class_idx in
+                   range(pbr.data.shape[1])}
     classes = list((source_dict.keys()))[::-1]
     regions = [str(i) for i in range(1, 1001)]
     source_dict['regions'] = regions
@@ -155,6 +156,20 @@ def plot_area_across_regions(pbr):
     myelin = Div(text='Myelin', style={'text-align': 'center'}, width=1000)
     result = column(csf, plot, myelin)
     return result
+
+
+def plot_linear_model_across_regions(measurement: str, metric: str = 'rsquared'):
+    scores = dao.get_scores(measurement)
+    source_dict = dao.cla.calculate_linear_model_dict(scores)
+    source = ColumnDataSource(data=source_dict)
+    n_regions = len(source_dict['region'])
+    plot = bp.figure(x_range=(1, n_regions), name='lm_figure')
+    plot.line(x='region', y=metric, source=source)
+    plot.xaxis.axis_label = 'AAL Region'
+    plot.yaxis.axis_label = 'R-squared'
+    plot_source_dict[plot] = source
+    return plot
+
 
 def create_subject_summary():
     subject_div.text = ''
@@ -187,9 +202,15 @@ def create_subject_summary():
                     subject_div.text += f'{measurement["measurement"]}: {value}<br />'
 
 
-def show_message(txt: str, style: dict = None):
-    msg_div.text = txt
-    msg_div.style = style
+def atlas_show_message(txt: str, style: dict = None):
+    atlas_msg_div.text = txt
+    atlas_msg_div.style = style
+
+
+def lm_show_message(txt: str, style: dict = None):
+    lm_msg_div.text = txt
+    lm_msg_div.style = style
+
 
 """
 Widgets
@@ -219,28 +240,30 @@ def update_visible_classes(attr, old, new):
 
 classes_checkbox.on_change('active', update_visible_classes)
 
-msg_div = Div(text='', name='message')
+atlas_msg_div = Div(text='', name='atlas_message')
+lm_msg_div = Div(text='', name='lm_message')
 
 # Select menu to choose the displayed results set (single subject or summary)
 options = ['mean'] + [str(subject) for subject in dao.subjects if hasattr(subject, 'pbr')]
-select = Select(title="Results set:", value="mean", options=options)
+select = Select(title="Results set", value="mean", options=options)
 
 
 def change_results_set(attr, old, new):
     set_id = select.value
     if set_id not in ['mean']:
         set_id = set_id[-9:]
-    show_message(f'Loading results for subject {select.value}...', style={'color': 'orange'})
+    atlas_show_message(f'Loading results for subject {select.value}...', style={'color': 'orange'})
     dao.results_set = dao.get_results_set(set_id)
     if not dao.results_set:
-        show_message(f'Could not find results for {select.value}!', style={'color': 'red'})
+        atlas_show_message(f'Could not find results for {select.value}!', style={'color': 'red'})
         return
     else:
-        show_message(f'Displaying reults for {select.value}', style={'color': 'green'})
+        atlas_show_message(f'Displaying reults for {select.value}', style={'color': 'green'})
         for class_idx in classes_checkbox.active:
             for plane in ('sagittal', 'coronal', 'horizontal'):
                 existing_plot = curdoc().get_model_by_name(f'class_{class_idx}_{plane}')
                 update_plot(existing_plot)
+
 
 select.on_change('value', change_results_set)
 
@@ -248,7 +271,7 @@ select.on_change('value', change_results_set)
 if dao.results_set:
     sample_img = dao.results_set[0].data
 else:
-    sample_img = np.zeros((1,1,1))
+    sample_img = np.zeros((1, 1, 1))
 sagittal_slice_slider = Slider(start=1, end=sample_img.shape[0], value=1, step=1,
                                title='Sagittal Slice')
 coronal_slice_slider = Slider(start=1, end=sample_img.shape[1], value=1, step=1,
@@ -273,10 +296,7 @@ sagittal_slice_slider.on_change('value', partial(change_slice, plane='sagittal')
 coronal_slice_slider.on_change('value', partial(change_slice, plane='coronal'))
 horizontal_slice_slider.on_change('value', partial(change_slice, plane='horizontal'))
 
-
-"""
-Create layout and set as document root
-"""
+# Subjects table
 
 subjects_df = dao.get_subject_attributes_df()
 subjects_data = dict(subjects_df)
@@ -291,13 +311,48 @@ columns = [
 ]
 subjects_table = DataTable(source=subjects_source, columns=columns, width=600, height=900)
 
+
 def change_subject_view(attr, old, new):
     subject_id = subjects_source.data['id'][subjects_source.selected.indices[0]]
     subject_id = str(subject_id).zfill(9)
     dao.chosen_subject = dao.get_subject_by_id(subject_id)
     create_subject_summary()
 
+
 subjects_source.on_change('selected', change_subject_view)
+
+measurements = ['height', 'weight', 'age']
+lm_measurement_select = Select(title='Measurement', value='age', options=measurements)
+
+
+def calculate_lm(attr, old, new):
+    lm_figure = curdoc().get_model_by_name('lm_figure')
+    lm_show_message('Calculating...', style={'color': 'orange'})
+    scores = dao.get_scores(lm_measurement_select.value)
+    lm_results = dao.cla.calculate_linear_model_dict(scores)
+    lm_show_message('Done!', style={'color': 'green'})
+    source = plot_source_dict[lm_figure]
+    source.data = lm_results
+
+
+lm_measurement_select.on_change('value', calculate_lm)
+
+metrics = ['rquared', 'rsquared_adj']
+lm_metrics_select = Select(title='Metric', value='rquared', options=measurements)
+
+def update_lm_metric(attr, old, new):
+    lm_figure = curdoc().get_model_by_name('lm_figure')
+    lm_show_message('Adjusting...', style={'color': 'orange'})
+    # HERE
+    lm_show_message('Done!', style={'color': 'green'})
+    source = plot_source_dict[lm_figure]
+    source.data = lm_results
+
+lm_metrics_select.on_change('value', calculate_lm)
+
+"""
+Create layout and set as document root
+"""
 
 subjects_row = row(subjects_table, subject_div)
 subjects_tab = Panel(child=subjects_row, title='Subjects')
@@ -307,10 +362,15 @@ summary_stats_tab = Panel(child=area_plot, title="Summary Statistics")
 
 all_class_figures = column(name='all_class_figures')
 control = widgetbox(select, classes_checkbox, sagittal_slice_slider, coronal_slice_slider,
-                      horizontal_slice_slider, msg_div, name='figure_control')
+                    horizontal_slice_slider, atlas_msg_div, name='figure_control')
 final = row(control, all_class_figures, name='main_layout')
 atlas_tab = Panel(child=final, title='Atlas Projection')
-tabs = Tabs(tabs=[subjects_tab, summary_stats_tab, atlas_tab])
+
+lm_plot = plot_linear_model_across_regions(lm_measurement_select.value)
+lm_control = widgetbox(lm_measurement_select, lm_msg_div, name='lm_control')
+lm_layout = column(lm_control, lm_plot, name='lm_layout')
+lm_tab = Panel(child=lm_layout, title='Linear Models')
+
+tabs = Tabs(tabs=[subjects_tab, summary_stats_tab, atlas_tab, lm_tab])
 
 curdoc().add_root(tabs)
-
