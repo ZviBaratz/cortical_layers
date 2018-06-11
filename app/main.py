@@ -1,5 +1,5 @@
 import sys, os
-
+import pickle
 sys.path.append(os.path.abspath(os.path.join('..', 'research')))
 
 import bokeh.plotting as bp
@@ -11,12 +11,14 @@ from bokeh.layouts import row, column, widgetbox
 from bokeh.models import HoverTool, ColumnDataSource
 from bokeh.models.widgets import CheckboxGroup, Div, Slider, Select, Panel, Tabs, DataTable, \
     DateFormatter, TableColumn
+from bokeh.palettes import Category10
 from datetime import datetime
 from functools import partial
 
 from research.dao import DataAccessObject, n_classes
 
 dao = DataAccessObject()
+big_five = ('neuroticism', 'extraversion', 'openness', 'agreeableness', 'conscientiousness')
 
 """
 Setup
@@ -158,17 +160,67 @@ def plot_area_across_regions(pbr):
     return result
 
 
-def plot_linear_model_across_regions(measurement: str, metric: str = 'rsquared'):
-    scores = dao.get_scores(measurement)
-    source_dict = dao.cla.calculate_linear_model_dict(scores)
-    source = ColumnDataSource(data=source_dict)
+def plot_linear_model_across_regions(measurement: str):
+
+    # Get linear model results dictionary
+    source_dict, scores = get_linear_model_results(measurement)
+
+    # Summary div
+    n_subjects = len(scores[scores.index.isin([pbr.subject_id for pbr in dao.pbrs])])
+    div = Div(text=f'Summary results over {n_subjects} subjects')
+
+    # Create figure
     n_regions = len(source_dict['region'])
-    plot = bp.figure(x_range=(1, n_regions), name='lm_figure')
-    plot.line(x='region', y=metric, source=source)
-    plot.xaxis.axis_label = 'AAL Region'
-    plot.yaxis.axis_label = 'R-squared'
-    plot_source_dict[plot] = source
-    return plot
+    r_plot = bp.figure(x_range=(1, n_regions), name='lm_r_figure', width=1750,
+                       title='Quality of Fit')
+
+    # Create R-squared plot
+    colors = Category10[10][:2]
+    legend_list = ['R-squared', 'Adjusted R-squared']
+    x = list(range(1, n_regions+1))
+    ys = [source_dict['rsquared'], source_dict['rsquared_adj']]
+    r_plot.xaxis.axis_label = 'AAL Region'
+    for color, leg, y in zip(colors, legend_list, ys):
+        line = r_plot.line(x, y, line_width=0.5, color=color, legend=leg)
+    plot_source_dict[r_plot] = source_dict
+
+    # Create p-values plots
+    p_colors = Category10[10][2:]
+    p_plots = []
+    for class_idx in range(n_classes):
+        p_plot = bp.figure(x_range=(1, n_regions), name=f'lm_{class_idx}_p_figure', width=875,
+                           title=f'Class {class_idx+1} p-Values')
+        p_values = []
+        for region_idx in range(n_regions):
+            p_values.append(source_dict['pvalues'][region_idx][class_idx])
+        p_plot.line(x, p_values, color=p_colors[class_idx])
+        p_plot.y_range.start = 0
+        p_plot.y_range.end = 1
+        p_plot.yaxis.axis_label = 'p-Value'
+        p_plot.xaxis.axis_label = 'AAL Region'
+        p_plots.append(p_plot)
+    p_plots_layout = column(row(*p_plots[:2]), row(*p_plots[2:4]), row(*p_plots[4:]))
+
+    layout = column(div, r_plot, p_plots_layout)
+    return layout
+
+def get_linear_model_results(measurement: str):
+    if measurement in big_five:
+        scores = dao.get_neo_scores(measurement)
+    else:
+        scores = dao.get_scores(measurement)
+    file_name = f'{measurement}_lm_results.pkl'
+    file_path = os.path.join('./app/obj', file_name)
+    if os.path.isfile(file_path):
+        lm_show_message('Loading...', style={'color': 'orange'})
+        with open(file_path, 'rb') as f:
+            return pickle.load(f), scores
+    else:
+        lm_show_message('Calculating...', style={'color': 'orange'})
+        source_dict = dao.cla.calculate_linear_model_dict(scores)
+        with open(file_path, 'wb') as f:
+            pickle.dump(source_dict, f, pickle.HIGHEST_PROTOCOL)
+        return source_dict, scores
 
 
 def create_subject_summary():
@@ -321,34 +373,17 @@ def change_subject_view(attr, old, new):
 
 subjects_source.on_change('selected', change_subject_view)
 
-measurements = ['height', 'weight', 'age']
+measurements = ['height', 'weight', 'age'] + sorted(big_five)
 lm_measurement_select = Select(title='Measurement', value='age', options=measurements)
 
 
-def calculate_lm(attr, old, new):
-    lm_figure = curdoc().get_model_by_name('lm_figure')
-    lm_show_message('Calculating...', style={'color': 'orange'})
-    scores = dao.get_scores(lm_measurement_select.value)
-    lm_results = dao.cla.calculate_linear_model_dict(scores)
+def update_lm_measurement(attr, old, new):
+    lm_layout.children[1] = plot_linear_model_across_regions(lm_measurement_select.value)
     lm_show_message('Done!', style={'color': 'green'})
-    source = plot_source_dict[lm_figure]
-    source.data = lm_results
 
 
-lm_measurement_select.on_change('value', calculate_lm)
+lm_measurement_select.on_change('value', update_lm_measurement)
 
-metrics = ['rquared', 'rsquared_adj']
-lm_metrics_select = Select(title='Metric', value='rquared', options=measurements)
-
-def update_lm_metric(attr, old, new):
-    lm_figure = curdoc().get_model_by_name('lm_figure')
-    lm_show_message('Adjusting...', style={'color': 'orange'})
-    # HERE
-    lm_show_message('Done!', style={'color': 'green'})
-    source = plot_source_dict[lm_figure]
-    source.data = lm_results
-
-lm_metrics_select.on_change('value', calculate_lm)
 
 """
 Create layout and set as document root
@@ -367,6 +402,7 @@ final = row(control, all_class_figures, name='main_layout')
 atlas_tab = Panel(child=final, title='Atlas Projection')
 
 lm_plot = plot_linear_model_across_regions(lm_measurement_select.value)
+lm_show_message('Done!', style={'color': 'green'})
 lm_control = widgetbox(lm_measurement_select, lm_msg_div, name='lm_control')
 lm_layout = column(lm_control, lm_plot, name='lm_layout')
 lm_tab = Panel(child=lm_layout, title='Linear Models')

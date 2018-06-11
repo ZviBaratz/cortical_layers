@@ -34,6 +34,10 @@ class DataAccessObject:
         for subject in self.subjects}
         return pd.DataFrame(data=list(scores_dict.values()), index=list(scores_dict.keys()))
 
+    def get_neo_scores(self, trait: str):
+        scores_dict = {subject.id: getattr(subject.neo_ffi, trait) for subject in self.subjects if hasattr(subject, 'neo_ffi')}
+        return pd.DataFrame(data=list(scores_dict.values()), index=list(scores_dict.keys()))
+
     def get_probability_by_region_matrices(self):
         return [subject.pbr for subject in self.subjects if hasattr(subject, 'pbr')]
 
