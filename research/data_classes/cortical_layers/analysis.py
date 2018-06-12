@@ -6,6 +6,7 @@ import pandas as pd
 import statsmodels.api as sm
 
 from statsmodels.formula.api import ols
+from statsmodels.stats.multitest import fdrcorrection
 from .brain_atlas import BrainAtlas
 from .cfg import n_classes, results_dir, atlas
 from .probability_by_region_matrix import ProbabilityByRegionMatrix
@@ -105,6 +106,14 @@ class CorticalLayersAnalysis:
             results_dict['rsquared'].append(model.rsquared)
             results_dict['rsquared_adj'].append(model.rsquared_adj)
             results_dict['pvalues'].append(model.pvalues)
+
+        # Fix for multiple comparisons
+        results_dict['corr_pvalues'] = np.zeros((1000, 6))
+        for class_idx in range(6):
+            class_pvalues = [value[class_idx] for value in results_dict['pvalues']]
+            corrected_pvalues = fdrcorrection(class_pvalues)[1]
+            results_dict['corr_pvalues'][:, class_idx] = corrected_pvalues
+        results_dict['corr_pvalues'] = results_dict['corr_pvalues'].tolist()
         return results_dict
 
     def calculate_linear_model(self, scores: pd.DataFrame):
@@ -113,8 +122,12 @@ class CorticalLayersAnalysis:
         df = df.set_index('region')
         return df
 
-    def create_lm_map(self, results: pd.DataFrame, atlas: BrainAtlas = atlas):
+    def create_lm_map(self, results: pd.DataFrame, atlas: BrainAtlas = atlas, only_significant_p: bool = True):
         value_by_region = dict(results['rsquared_adj'])
+        if only_significant_p:
+            for region_idx in value_by_region:
+                if not any([value < 0.05 for value in results['corr_pvalues'][region_idx]]):
+                    value_by_region[region_idx] = 0
         return atlas.convert_from_dict(value_by_region)
 
 

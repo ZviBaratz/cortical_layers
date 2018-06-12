@@ -144,8 +144,7 @@ def plot_area_across_regions(pbr):
     regions = [str(i) for i in range(1, 1001)]
     source_dict['regions'] = regions
     source = ColumnDataSource(data=source_dict)
-    plot = bp.figure(x_range=regions, title='Class Area by AAL Region', plot_width=1000,
-                     toolbar_location=None, tools="")
+    plot = bp.figure(x_range=regions, title='Class Area by AAL Region', plot_width=1500)
     plot.vbar_stack(classes, x='regions', width=0.1,
                     color=['blue', 'red', 'yellow', 'green', 'purple', 'grey'],
                     source=source, legend=[value(x) for x in classes])
@@ -154,6 +153,7 @@ def plot_area_across_regions(pbr):
     plot.yaxis.axis_label = 'Class Probability'
     plot.xaxis.axis_label = 'AAL Region'
     # plot.xaxis[0].ticker.ticks = list(range(0,1001,50))[1:]
+    plot.xaxis.visible = False
     plot.legend.location = "top_right"
     csf = Div(text='CSF', style={'text-align': 'center'}, width=1000)
     myelin = Div(text='Myelin', style={'text-align': 'center'}, width=1000)
@@ -192,11 +192,11 @@ def plot_linear_model_across_regions(measurement: str):
                            title=f'Class {class_idx+1} p-Values')
         p_values = []
         for region_idx in range(n_regions):
-            p_values.append(source_dict['pvalues'][region_idx][class_idx])
+            p_values.append(source_dict['corr_pvalues'][region_idx][class_idx])
         p_plot.line(x, p_values, color=p_colors[class_idx])
         p_plot.y_range.start = 0
         p_plot.y_range.end = 1
-        p_plot.yaxis.axis_label = 'p-Value'
+        p_plot.yaxis.axis_label = 'FDR corr. p-Value'
         p_plot.xaxis.axis_label = 'AAL Region'
         p_plots.append(p_plot)
     p_plots_layout = column(row(*p_plots[:2]), row(*p_plots[2:4]), row(*p_plots[4:]))
