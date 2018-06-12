@@ -11,3 +11,6 @@ class SubjectMeasurements:
         del rows['measurement']
         rows.name = f'{self.subject_id}/{name}'
         return rows
+
+    def get_last_measurement_value(self, name:str):
+        return self.get_measurement_data(name)['value'].values[0]

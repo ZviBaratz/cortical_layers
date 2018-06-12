@@ -5,7 +5,9 @@ import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 
-from .cfg import n_classes, results_dir
+from statsmodels.formula.api import ols
+from .brain_atlas import BrainAtlas
+from .cfg import n_classes, results_dir, atlas
 from .probability_by_region_matrix import ProbabilityByRegionMatrix
 from .probability_map import ProbabilityMap
 
@@ -93,7 +95,7 @@ class CorticalLayersAnalysis:
         X = X.dropna()
         model = sm.OLS(scores, X.astype(float)).fit()
         # predictions = model.predict(X)
-        return model #, predictions
+        return model  # , predictions
 
     def calculate_linear_model_dict(self, scores: pd.DataFrame):
         results_dict = {'region': [], 'rsquared': [], 'rsquared_adj': [], 'pvalues': []}
@@ -110,6 +112,36 @@ class CorticalLayersAnalysis:
         df = pd.DataFrame.from_dict(results_dict)
         df = df.set_index('region')
         return df
+
+    def create_lm_map(self, results: pd.DataFrame, atlas: BrainAtlas = atlas):
+        value_by_region = dict(results['rsquared_adj'])
+        return atlas.convert_from_dict(value_by_region)
+
+
+    def get_class_probability_by_region_per_subject(self, class_idx: int, region_idx: int):
+        probability_dict = {pbr.subject_id: pbr.data[region_idx, class_idx] for pbr in self.pbrs}
+        return pd.DataFrame(data=list(probability_dict.values()),
+                            index=list(probability_dict.keys()))
+
+    def region_anova(self, class_probability: pd.DataFrame,
+                     categorical_df: pd.DataFrame) -> pd.DataFrame:
+        df = pd.concat([class_probability, categorical_df], axis=1, sort=True).dropna()
+        df.columns = ['probability', 'group']
+        model = ols('probability ~ group', data=df).fit()
+        return sm.stats.anova_lm(model, typ=2)
+
+    def calculate_effect_size(self, aov_table: pd.DataFrame):
+        return aov_table['sum_sq'][0] / (aov_table['sum_sq'][0] + aov_table['sum_sq'][1])
+
+    def calculate_anova(self, class_idx: int, categorical_df: pd.DataFrame):
+        results_dict = {'region_idx': list(range(1000)), 'F': [], 'p': []}
+        for region_idx in range(1000):
+            region_class_probability = self.get_class_probability_by_region_per_subject(class_idx,
+                                                                                        region_idx)
+            aov_table = self.region_anova(region_class_probability, categorical_df)
+            results_dict['F'].append(aov_table.loc['group', 'F'])
+            results_dict['p'].append(aov_table.loc['group', 'PR(>F)'])
+        return pd.DataFrame.from_dict(results_dict).set_index('region_idx')
 
     @property
     def stacked_pbrs(self) -> np.ndarray:

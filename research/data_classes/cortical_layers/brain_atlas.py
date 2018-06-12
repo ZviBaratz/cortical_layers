@@ -14,9 +14,17 @@ class BrainAtlas:
     def convert_from_dict(self, value_dict: dict) -> np.ndarray:
         linear_template = self.template.ravel()
         new_array = np.zeros(linear_template.shape)
+        if 0 in value_dict:
+            keys = [key + 1 for key in value_dict.keys()]
+            subtract = True
+        else:
+            keys = value_dict.keys()
+            subtract = False
         for region_id in self.region_ids:
-            if region_id in value_dict:
-                new_array[linear_template == region_id] = value_dict[region_id]
+            if region_id in keys:
+                key = region_id
+                if subtract: key -= 1
+                new_array[linear_template == region_id] = value_dict[key]
         return new_array.reshape(self.template.shape)
 
     @property

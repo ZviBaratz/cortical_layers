@@ -8,6 +8,7 @@ research/__pycache__/
 venv/
 
 # Data
+research/results/
 research/test/test_data/
 research/data_classes/cortical_layers/data/
 **.npy

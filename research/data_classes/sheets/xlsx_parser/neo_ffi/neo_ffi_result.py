@@ -8,3 +8,6 @@ class NeoFfiResult:
         self.series = series
         for attribute in self.big_five:
             setattr(self, attribute, self.series[attribute])
+
+    def get_score(self, trait: str):
+        return getattr(self, trait)

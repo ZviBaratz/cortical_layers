@@ -1,9 +1,11 @@
 import sys, os
 import pickle
+
 sys.path.append(os.path.abspath(os.path.join('..', 'research')))
 
 import bokeh.plotting as bp
 import numpy as np
+import pandas as pd
 
 from bokeh.core.properties import value
 from bokeh.io import curdoc
@@ -18,7 +20,6 @@ from functools import partial
 from research.dao import DataAccessObject, n_classes
 
 dao = DataAccessObject()
-big_five = ('neuroticism', 'extraversion', 'openness', 'agreeableness', 'conscientiousness')
 
 """
 Setup
@@ -161,7 +162,6 @@ def plot_area_across_regions(pbr):
 
 
 def plot_linear_model_across_regions(measurement: str):
-
     # Get linear model results dictionary
     source_dict, scores = get_linear_model_results(measurement)
 
@@ -177,7 +177,7 @@ def plot_linear_model_across_regions(measurement: str):
     # Create R-squared plot
     colors = Category10[10][:2]
     legend_list = ['R-squared', 'Adjusted R-squared']
-    x = list(range(1, n_regions+1))
+    x = list(range(1, n_regions + 1))
     ys = [source_dict['rsquared'], source_dict['rsquared_adj']]
     r_plot.xaxis.axis_label = 'AAL Region'
     for color, leg, y in zip(colors, legend_list, ys):
@@ -204,9 +204,12 @@ def plot_linear_model_across_regions(measurement: str):
     layout = column(div, r_plot, p_plots_layout)
     return layout
 
+
 def get_linear_model_results(measurement: str):
     if measurement in big_five:
         scores = dao.get_neo_scores(measurement)
+    elif measurement in cantab_measures:
+        scores = dao.get_cantab_scores(measurement)
     else:
         scores = dao.get_scores(measurement)
     file_name = f'{measurement}_lm_results.pkl'
@@ -221,6 +224,48 @@ def get_linear_model_results(measurement: str):
         with open(file_path, 'wb') as f:
             pickle.dump(source_dict, f, pickle.HIGHEST_PROTOCOL)
         return source_dict, scores
+
+
+def plot_class_anova(results: pd.DataFrame, class_idx: int):
+    x = list(range(1, len(results) + 1))
+    metrics = results.columns.tolist()
+    colors = Category10[10][:len(metrics)]
+    plot = bp.figure(x_range=(1, len(results) + 1), width=875, title=f'Class {class_idx}',
+                     name=f'class_{class_idx}_anova')
+    for i, metric in enumerate(metrics):
+        line = plot.line(x, results[metric].values, color=colors[i], legend=metric,
+                         name=f'class_{class_idx}_anova_{metric}')
+    plot.y_range.start = 0
+    plot.y_range.end = 1
+    plot.xaxis.axis_label = 'AAL Region'
+    plot.yaxis.axis_label = 'Estimator Value'
+    return plot
+
+
+def plot_anova(categorical_attr: str):
+    attribute_values = dao.get_subject_attributes(categorical_attr)
+    plots = []
+    for class_idx in range(n_classes):
+        all_region_results = get_anova_results(class_idx, categorical_attr)
+        plots.append(plot_class_anova(all_region_results, class_idx))
+    layout = column(row(*plots[:2]), row(*plots[2:4]), row(*plots[4:]))
+    return layout
+
+
+def get_anova_results(class_idx: int, categorical_attr: str):
+    file_name = f'{categorical_attr}_{class_idx}_anova_result.pkl'
+    file_path = os.path.join('./app/obj', file_name)
+    if os.path.isfile(file_path):
+        anova_show_message(f'Loading class {class_idx} results...', style={'color': 'orange'})
+        with open(file_path, 'rb') as f:
+            return pickle.load(f)
+    else:
+        anova_show_message(f'Calculating class {class_idx+1}...', style={'color': 'orange'})
+        attribute_values = dao.get_subject_attributes(categorical_attr)
+        results = dao.cla.calculate_anova(class_idx, attribute_values)
+        with open(file_path, 'wb') as f:
+            pickle.dump(results, f, pickle.HIGHEST_PROTOCOL)
+        return results
 
 
 def create_subject_summary():
@@ -264,6 +309,11 @@ def lm_show_message(txt: str, style: dict = None):
     lm_msg_div.style = style
 
 
+def anova_show_message(txt: str, style: dict = None):
+    anova_msg_div.text = txt
+    anova_msg_div.style = style
+
+
 """
 Widgets
 """
@@ -294,6 +344,7 @@ classes_checkbox.on_change('active', update_visible_classes)
 
 atlas_msg_div = Div(text='', name='atlas_message')
 lm_msg_div = Div(text='', name='lm_message')
+anova_msg_div = Div(text='', name='anova_message')
 
 # Select menu to choose the displayed results set (single subject or summary)
 options = ['mean'] + [str(subject) for subject in dao.subjects if hasattr(subject, 'pbr')]
@@ -373,40 +424,82 @@ def change_subject_view(attr, old, new):
 
 subjects_source.on_change('selected', change_subject_view)
 
-measurements = ['height', 'weight', 'age'] + sorted(big_five)
+# ANOVA attribute select
+categorical_attributes = ['sex', 'dominant_hand']
+anova_categorical_select = Select(title='Group by', value='sex', options=categorical_attributes)
+
+
+def update_anova_attribute(attr, old, new):
+    anova_layout.children[1] = plot_anova(anova_categorical_select.value)
+    anova_show_message('Ready!', style={'color': 'green'})
+
+
+anova_categorical_select.on_change('value', update_anova_attribute)
+
+# ANOVA statistic checkboxgroup
+statistics = ['F', 'p']
+anova_statistic_cb = CheckboxGroup(labels=statistics, active=[0, 1])
+
+
+def update_visible_statistics(attr, old, new):
+    for statistic in anova_statistic_cb.labels:
+        show_bool = statistics.index(statistic) in anova_statistic_cb.active
+        for class_idx in range(n_classes):
+            line = curdoc().get_model_by_name(f'class_{class_idx}_anova_{statistic}')
+            line.visible = show_bool
+
+
+anova_statistic_cb.on_change('active', update_visible_statistics)
+
+# Linear model attribute select
+big_five = ['agreeableness', 'conscientiousness', 'extraversion', 'neuroticism', 'openness']
+cantab_measures = ['DMSMDLAD', 'DMSPC', 'PALFAMS', 'PALTEA', 'RTIFMDRT', 'RTIFMMT', 'RVPA',
+                   'RVPMDL', 'SWMBE', 'SWMS']
+measurements = ['height', 'weight', 'age'] + big_five + cantab_measures
 lm_measurement_select = Select(title='Measurement', value='age', options=measurements)
 
 
 def update_lm_measurement(attr, old, new):
     lm_layout.children[1] = plot_linear_model_across_regions(lm_measurement_select.value)
-    lm_show_message('Done!', style={'color': 'green'})
+    lm_show_message('Ready!', style={'color': 'green'})
 
 
 lm_measurement_select.on_change('value', update_lm_measurement)
-
 
 """
 Create layout and set as document root
 """
 
+# Subjects tab
 subjects_row = row(subjects_table, subject_div)
 subjects_tab = Panel(child=subjects_row, title='Subjects')
 
+# Statistical summary tab
 area_plot = plot_area_across_regions(dao.cla.mean_pbr)
 summary_stats_tab = Panel(child=area_plot, title="Summary Statistics")
 
+# Atlas projection tab
 all_class_figures = column(name='all_class_figures')
 control = widgetbox(select, classes_checkbox, sagittal_slice_slider, coronal_slice_slider,
                     horizontal_slice_slider, atlas_msg_div, name='figure_control')
 final = row(control, all_class_figures, name='main_layout')
 atlas_tab = Panel(child=final, title='Atlas Projection')
 
+# ANOVA tab
+anova_plot = plot_anova(anova_categorical_select.value)
+anova_show_message('Ready!', style={'color': 'green'})
+anova_control = column(row(widgetbox(anova_categorical_select), widgetbox(anova_statistic_cb)), anova_msg_div,
+                          name='anova_control')
+anova_layout = column(anova_control, anova_plot, name='anova_layout')
+anova_tab = Panel(child=anova_layout, title='ANOVA')
+
+# Linear model tab
 lm_plot = plot_linear_model_across_regions(lm_measurement_select.value)
-lm_show_message('Done!', style={'color': 'green'})
+lm_show_message('Ready!', style={'color': 'green'})
 lm_control = widgetbox(lm_measurement_select, lm_msg_div, name='lm_control')
 lm_layout = column(lm_control, lm_plot, name='lm_layout')
 lm_tab = Panel(child=lm_layout, title='Linear Models')
 
-tabs = Tabs(tabs=[subjects_tab, summary_stats_tab, atlas_tab, lm_tab])
+tabs = Tabs(tabs=[subjects_tab, summary_stats_tab, atlas_tab, anova_tab, lm_tab])
 
 curdoc().add_root(tabs)

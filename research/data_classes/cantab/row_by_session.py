@@ -37,4 +37,6 @@ class RowBySessionResults:
             return by_name.squeeze()
 
     def get_subject_results(self, name_id: str, dob: str):
-        return CantabResults(self.get_subject_series(name_id, dob))
+        series = self.get_subject_series(name_id, dob)
+        if isinstance(series, pd.Series):
+            return CantabResults(series)

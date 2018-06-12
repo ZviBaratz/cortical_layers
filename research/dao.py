@@ -30,13 +30,25 @@ class DataAccessObject:
 
     def get_scores(self, measurement_name: str):
         scores_dict = {
-        subject.id: subject.measurements.get_measurement_data(measurement_name)['value'].values[0]
+        subject.id: subject.measurements.get_last_measurement_value(measurement_name)
         for subject in self.subjects}
         return pd.DataFrame(data=list(scores_dict.values()), index=list(scores_dict.keys()))
 
     def get_neo_scores(self, trait: str):
-        scores_dict = {subject.id: getattr(subject.neo_ffi, trait) for subject in self.subjects if hasattr(subject, 'neo_ffi')}
+        scores_dict = {subject.id: subject.neo_ffi.get_score(trait) for subject in self.subjects if hasattr(subject, 'neo_ffi')}
         return pd.DataFrame(data=list(scores_dict.values()), index=list(scores_dict.keys()))
+
+    def get_cantab_scores(self, measure: str):
+        scores_dict = {subject.id: subject.cantab.get_score(measure) for subject in self.subjects if hasattr(subject, 'cantab')}
+        return pd.DataFrame(data=list(scores_dict.values()), index=list(scores_dict.keys()))
+
+    def get_subject_attributes(self, attr_name: str):
+        attr_dict = {subject.id: getattr(subject, attr_name) for subject in self.subjects if hasattr(subject, attr_name)}
+        return pd.DataFrame(data=list(attr_dict.values()), index=list(attr_dict.keys()))
+
+    def get_class_probability_by_region_per_subject(self, class_idx: int, region_idx: int):
+        probability_dict = {subject.id: subject.pbr.data[region_idx, class_idx] for subject in self.subjects if hasattr(subject, 'pbr')}
+        return pd.DataFrame(data=list(probability_dict.values()), index=list(probability_dict.keys()))
 
     def get_probability_by_region_matrices(self):
         return [subject.pbr for subject in self.subjects if hasattr(subject, 'pbr')]
